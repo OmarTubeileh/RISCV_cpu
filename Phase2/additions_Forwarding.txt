@@ -1,0 +1,22 @@
+Forwarding: 
+
+- ID_EXE_REG: 
+input RS1_D, RS2_D (Source registers from ID stage)
+output reg  RS1_D, RS2_D (Pass source registers to EXE stage)
+
+- EXE_Stage: 
+// Forwarding inputs
+    input [4:0] RS1_E, RS2_E,      // Source registers from ID/EX
+    input [4:0] RD_M, RD_W,        // Destination registers from MEM and WB
+    input RegWriteM, RegWriteW,    // Write enable signals from MEM and WB
+    input [63:0] ALU_ResultM,      // ALU result from MEM stage
+    input [63:0] WriteDataW,       // Write-back data from WB stage
+
+ForwardingUnit forward_unit
+
+MUX logic for ALU operands (SrcA and SrcB)
+ 
+- ForwardingUnit added
+
+- Full pipeline changed (stages declaration)
+

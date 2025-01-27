@@ -1,0 +1,8 @@
+new Branch prediction module
+
+IF stage: 
+The mux is now used to select between:
+The predicted PC (if the branch is predicted taken, use target_pc).
+The resolved branch target (from the EXE stage) if a branch decision is made.
+The default sequential PC (PC + 4) if no branch is predicted or resolved.
+

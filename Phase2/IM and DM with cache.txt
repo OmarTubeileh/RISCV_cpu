@@ -1,0 +1,182 @@
+`include "1_Program_Counter.v"
+`include "2_Instruction_Memory.v"
+`include "Mux.v"
+`include "Branch_Prediction_Unit.v"
+`include "Instruction_Cache.v"
+
+module IF_Stage(
+    input clk,
+    input reset,
+    input PCSrc_E,                 // Branch decision from EXE stage
+    input [63:0] PC_Target_E,      // Resolved target address from EXE stage
+    input branch_resolved,         // Indicates branch resolution in EXE stage
+    input actual_taken,            // Actual branch outcome from EXE stage
+    input [63:0] branch_pc,        // PC of the resolved branch instruction
+    input [63:0] branch_target_resolved, // Resolved branch target address
+    input PCWrite,                 // Control signal from HDU to enable/disable PC updates
+    output wire [63:0] PC_D,       // Program Counter output for the next stage
+    output wire [31:0] instruction_D, // Instruction output for the next stage
+    output reg stall_pipeline      // Pipeline stall signal during cache miss
+);
+
+    wire [63:0] PC_F;              // Next PC value
+    wire [63:0] PCF;               // Current PC value
+    wire [63:0] PC_4F;             // PC + 4 (next sequential PC)
+    wire [31:0] instruction_F;     // Fetched instruction
+    wire predict_taken;            // Predicted branch outcome
+    wire [63:0] target_pc;         // Predicted branch target address
+
+    // Instruction Cache signals
+    wire cache_hit;
+    wire cache_request;
+    wire [31:0] cache_instruction;
+    wire memory_ready;
+    wire [31:0] memory_data;
+
+    // Branch Prediction Unit instantiation
+    BranchPredictionUnit bpu (
+        .clk(clk),
+        .reset(reset),
+        .pc(PCF),                     // Current PC
+        .branch_resolved(branch_resolved),
+        .actual_taken(actual_taken),
+        .branch_pc(branch_pc),
+        .branch_target_resolved(branch_target_resolved),
+        .predict_taken(predict_taken),
+        .target_pc(target_pc)
+    );
+
+    // Multiplexer to select between predicted or resolved PC
+    mux PC_mux (
+        .a((predict_taken) ? target_pc : PC_4F), // Predicted next PC
+        .b(PC_Target_E),                         // Resolved branch target address
+        .s(PCSrc_E),                             // Resolved branch decision
+        .c(PC_F)                                 // Selected PC
+    );
+
+    // Program Counter
+    PC pc (
+        .clk(clk),
+        .reset(reset),
+        .PCWrite(PCWrite && !stall_pipeline), // Stall PC updates during cache miss
+        .pc_in(PC_F),
+        .pc_out(PCF)
+    );
+
+    // Instruction Cache instantiation
+    InstructionCache i_cache (
+        .clk(clk),
+        .reset(reset),
+        .address(PCF),             // Address from PC
+        .instruction(cache_instruction), // Fetched instruction
+        .hit(cache_hit),           // Cache hit signal
+        .memory_ready(memory_ready),
+        .memory_data(memory_data),
+        .memory_request(cache_request)
+    );
+
+    // Instruction Memory
+    InstructionMemory instr_mem (
+        .clk(clk),
+        .address(PCF),
+        .instruction(memory_data)  // Data provided to I-Cache on miss
+    );
+
+    // PC + 4 calculation
+    assign PC_4F = PCF + 64'd4;
+
+    // Outputs
+    assign instruction_D = (reset) ? 32'd0 : (cache_hit ? cache_instruction : 32'd0);
+    assign PC_D = (reset) ? 64'd0 : PCF;
+
+    // Stall pipeline during cache miss
+    always @(posedge clk or posedge reset) begin
+        if (reset)
+            stall_pipeline <= 0;
+        else
+            stall_pipeline <= !cache_hit && cache_request;
+    end
+
+endmodule
+
+`include "7_Data_Memory.v"
+`include "Data_Cache.v"
+
+module MEM_Stage (
+    input clk,                     // Clock signal
+    input reset,                   // Reset signal (active-high)
+    
+    // Inputs from EXE/MEM Register
+    input RegWriteM,
+    input MemWriteM,
+    input MemReadM,
+    input Mem_ReadM,
+    input MemtoRegM,
+    input [1:0] MemTypeM,
+    input [63:0] ALU_ResultM,
+    input [63:0] WriteDataM,
+    input [4:0] RD_M,
+
+    // Outputs to MEM/WB Register
+    output reg RegWriteW,
+    output reg MemtoRegW,
+    output reg [63:0] ReadDataW,
+    output reg [63:0] ALU_ResultW,
+    output reg [4:0] RD_W,
+    output reg stall_pipeline // Stall pipeline during cache miss
+);
+
+    // Data Cache signals
+    wire cache_hit;
+    wire cache_request;
+    wire [63:0] cache_data;
+    wire memory_ready;
+    wire [63:0] memory_data;
+
+    // Data Cache instantiation
+    DataCache d_cache (
+        .clk(clk),
+        .reset(reset),
+        .address(ALU_ResultM),
+        .mem_read(MemReadM),
+        .mem_write(MemWriteM),
+        .write_data(WriteDataM),
+        .read_data(cache_data),
+        .hit(cache_hit),
+        .memory_ready(memory_ready),
+        .memory_data(memory_data),
+        .memory_request(cache_request)
+    );
+
+    // Data Memory
+    DataMemory data_memory (
+        .clk(clk),
+        .mem_read(cache_request && MemReadM),
+        .mem_write(cache_request && MemWriteM),
+        .MemType(MemTypeM),
+        .address(ALU_ResultM),
+        .write_data(WriteDataM),
+        .read_data(memory_data)
+    );
+
+    // Pass signals to MEM/WB Register
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            // Reset outputs
+            RegWriteW <= 0;
+            MemtoRegW <= 0;
+            ReadDataW <= 0;
+            ALU_ResultW <= 0;
+            RD_W <= 0;
+            stall_pipeline <= 0;
+        end else begin
+            stall_pipeline <= !cache_hit && cache_request;
+            RegWriteW <= RegWriteM;
+            MemtoRegW <= MemtoRegM;
+            ReadDataW <= MemReadM ? (cache_hit ? cache_data : 64'b0) : 64'b0;
+            ALU_ResultW <= ALU_ResultM;
+            RD_W <= RD_M;
+        end
+    end
+
+endmodule

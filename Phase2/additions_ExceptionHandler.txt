@@ -1,0 +1,10 @@
+Exception_Detection_Unit (SEPC and SCAUSE)
+Memory Violation: Detected internally by checking if the address is not word-aligned (pc % 4 != 0) for memory operations.
+Undefined opcode: detects if the instruction's opcode is not a valid one (ex:7'b1111111)
+
+Control unit: add exception_flag as input, and jump_to_handler & flush_pipeline as output. If exception_flag==1 -> flush_pipeline = jump_to_handler = 1
+
+ID: added the EDU, added outputs: flush_pipeline ,jump_to_handler, SCAUSE, SEPC
+ 
+Full pipeline: ID_EXE_REG, EXE, EXE_MEM_REG, MEM, MEM_WB_REG : make NOP on (reset || flush_pipeline)
+
